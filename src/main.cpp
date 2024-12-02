@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <time.h>
 
 
 #define SENSOR_PIN 33 // Define GPIO33 as the sensor pin
@@ -13,8 +14,25 @@ unsigned long lastActivityTime = 0;
 unsigned long lastDebounceTime = 0; // Last time the sensor state changed
 int lastStableState = LOW; // Last stbale state of the sensor
 int currentState = LOW; // Current state of the sensor
+//Wifi credentials
 const char* ssid = "E308"; // Wi-fi SSID
 const char* password = "98806829"; // Wi-fi password
+// NTP server and timezone settings
+const char* ntpServer = "pool.ntp.org"; //NTP server
+const long gmtOffset_sec = 3600;
+const int daylightOffset_sec = 3600;
+
+
+void printLocalTime()
+{
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo))
+  {
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");  
+}
 
 
 void setup() {
@@ -34,8 +52,14 @@ void setup() {
   Serial.println("\nConnected to Wi-Fi!");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP()); // Print the local IP address
-  
 
+  //Initialize and configure time
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  Serial.println("Time synchronized with NTP server.");
+  // Print the current time
+  printLocalTime();
+
+  // Deep sleep
   pinMode(SENSOR_PIN, INPUT);
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_33, 1); // Set GPIO33 as wake-up source on HIGH signal
   Serial.println("Sensor monitoring with debounce...");
@@ -87,6 +111,3 @@ void loop() {
 }
 
 // put function definitions here:
-// int myFunction(int x, int y) {
-//   return x + y;
-// }
