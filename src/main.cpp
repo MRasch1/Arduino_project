@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <time.h>
+#include <FirebaseESP32.h>
 
 
 #define SENSOR_PIN 33 // Define GPIO33 as the sensor pin
@@ -11,6 +12,8 @@
 // 10 000 milliseconds is 10 seconds
 #define LOG_FILE "/log.json" // Path to the Log file
 #define MAX_LOG_ENTRIES 100 // Maximum number of logs to keep in the file
+#define FIREBASE_HOST "object-counter-db-default-rtdb.europe-west1.firebasedatabase.app"
+#define FIREBASE_AUTH "TUgClLPtXF3vpOI6VfnExXLtkozFCNQwTYnouGve"
 
 // put function declarations here:
 //variables for debounce
@@ -25,6 +28,10 @@ const char* password = "98806829"; // Wi-fi password
 const char* ntpServer = "pool.ntp.org"; //NTP server
 const long gmtOffset_sec = 3600;
 const int daylightOffset_sec = 3600;
+// Firebase objects
+FirebaseData firebaseData;
+FirebaseConfig firebaseConfig;
+FirebaseAuth firebaseAuth;
 
 // Initialize SPIFFS
 void initializeSPIFFS()
@@ -101,6 +108,25 @@ else
   Serial.println("Log saved to SPIFFS");
 }
 file.close();
+
+//Upload to firebase
+String logData;
+size_t len = measureJson(doc); // Measure the length of the serialized JSON
+char buffer[len + 1];          // Create a buffer of the appropriate size
+serializeJson(doc, buffer, sizeof(buffer)); // Serialize JSON into the buffer
+logData = String(buffer);      // Convert the buffer to an Arduino String
+
+if (!Firebase.RTDB.setString(&firebaseData, "/logs", logData))
+{
+  Serial.println("Failed to upload log to Firebase:");
+  Serial.println(firebaseData.errorReason());
+}
+else
+{
+  Serial.println("Log uploaded to Firebase.");
+}
+
+
 }
 
 
@@ -115,6 +141,7 @@ void printLocalTime()
   }
   Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");  
 }
+
 
 
 void setup() {
@@ -143,6 +170,13 @@ void setup() {
 
   // Initialize SPIFFS
   initializeSPIFFS();
+
+  //set firebase configuration
+  firebaseConfig.database_url = FIREBASE_HOST; // set the firebase url
+  firebaseAuth.token.uid = FIREBASE_AUTH;
+
+  //initialize firebase
+  Firebase.begin(&firebaseConfig, &firebaseAuth);
 
   // Deep sleep
   pinMode(SENSOR_PIN, INPUT);
