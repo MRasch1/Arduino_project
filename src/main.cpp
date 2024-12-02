@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <WiFi.h>
 
 
 #define SENSOR_PIN 33 // Define GPIO33 as the sensor pin
@@ -12,12 +13,29 @@ unsigned long lastActivityTime = 0;
 unsigned long lastDebounceTime = 0; // Last time the sensor state changed
 int lastStableState = LOW; // Last stbale state of the sensor
 int currentState = LOW; // Current state of the sensor
+const char* ssid = "E308"; // Wi-fi SSID
+const char* password = "98806829"; // Wi-fi password
 
 
 void setup() {
   // put your setup code here, to run once:
-  // int result = myFunction(2, 3);
   Serial.begin(9600);
+
+  //Connect to Wi-fi
+  Serial.print("Connecting to Wi-fi...");
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(1000);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConnected to Wi-Fi!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP()); // Print the local IP address
+  
+
   pinMode(SENSOR_PIN, INPUT);
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_33, 1); // Set GPIO33 as wake-up source on HIGH signal
   Serial.println("Sensor monitoring with debounce...");
