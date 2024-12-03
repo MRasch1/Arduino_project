@@ -5,14 +5,12 @@
 #include <time.h>
 #include <FirebaseESP32.h>
 
-
 #define SENSOR_PIN 33 // Define GPIO33 as the sensor pin
 #define DEBOUNCE_DELAY 50 // Debounce time in milliseconds
-#define SLEEP_TIMEOUT 10000 // time (ms) before entering deep sleep if nothing is detected
-// 10 000 milliseconds is 10 seconds
+#define SLEEP_TIMEOUT 180000 // time (ms) before entering deep sleep if nothing is detected
 #define LOG_FILE "/log.json" // Path to the Log file
 #define MAX_LOG_ENTRIES 100 // Maximum number of logs to keep in the file
-#define FIREBASE_HOST "object-counter-db-default-rtdb.europe-west1.firebasedatabase.app"
+#define FIREBASE_HOST "https://object-counter-db-default-rtdb.europe-west1.firebasedatabase.app/"
 #define FIREBASE_AUTH "TUgClLPtXF3vpOI6VfnExXLtkozFCNQwTYnouGve"
 
 // put function declarations here:
@@ -22,12 +20,15 @@ unsigned long lastDebounceTime = 0; // Last time the sensor state changed
 int lastStableState = LOW; // Last stbale state of the sensor
 int currentState = LOW; // Current state of the sensor
 //Wifi credentials
-const char* ssid = "E308"; // Wi-fi SSID
-const char* password = "98806829"; // Wi-fi password
+// const char* ssid = "E308"; // Wi-fi SSID
+// const char* password = "98806829"; // Wi-fi password
+const char* ssid = "Dio Brando"; // Wi-fi SSID
+const char* password = "mudamuda10"; // Wi-fi password
 // NTP server and timezone settings
-const char* ntpServer = "pool.ntp.org"; //NTP server
+const char* ntpServer = "time.google.com"; //NTP server
 const long gmtOffset_sec = 3600;
 const int daylightOffset_sec = 3600;
+
 // Firebase objects
 FirebaseData firebaseData;
 FirebaseConfig firebaseConfig;
@@ -43,93 +44,97 @@ void initializeSPIFFS()
   }  
 }
 
-//Get the current timestamp as a string
-String getTimestamp()
-{
+// Get the current timestamp as a string
+String getTimestamp() {
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo))
-  {
+  if (!getLocalTime(&timeinfo)) {
     Serial.println("Failed to obtain time");
-    return "1970-01-01T00:00:00";
+    return "1970-01-01T00:00:00";  // Return a default value if time is invalid
   }
   char buffer[25];
   strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S", &timeinfo);
   return String(buffer);
 }
 
-//Save a log entry to JSON file
+// Save a log entry to the JSON file
 void logEvent(const String& timestamp, const String& event)
 {
-  //Open or create the log file
+  // Skip if timestamp or event is invalid
+  if (timestamp == "1970-01-01T00:00:00" || event.isEmpty()) {
+    Serial.println("Invalid data, skipping log entry.");
+    return;  // Skip logging if data is invalid
+  }
+
+  // Open or create the log file
   File file = SPIFFS.open(LOG_FILE, FILE_READ);
   DynamicJsonDocument doc(2048);
 
-  if(file)
+  if (file)
   {
-    //Parse existing JSON
+    // Parse existing JSON
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
     if (error)
     {
       Serial.println("Failed to parse existing JSON. Overwriting.");
-      doc.clear();
-    }    
+      doc.clear();  // If JSON parsing fails, clear the document to start fresh
+    }
   }
 
-// Ensure the log is an array
-if(!doc.is<JsonArray>())
-{
-  doc.clear();
-  doc.to<JsonArray>();
+  // Ensure the log is an array
+  if (!doc.is<JsonArray>())
+  {
+    doc.clear();  
+    JsonArray logArray = doc.to<JsonArray>();  // Create an empty array
+  }
+
+  JsonArray logArray = doc.as<JsonArray>();
+
+  // Add new log entry
+  JsonObject logEntry = logArray.createNestedObject();
+  logEntry["timestamp"] = timestamp;
+  logEntry["event"] = event;
+
+  // Limit Log size
+  if (logArray.size() > MAX_LOG_ENTRIES)
+  {
+    logArray.remove(0);  // Remove the oldest log entry if it exceeds the max size
+  }
+
+  // Save updated JSON back to file
+  file = SPIFFS.open(LOG_FILE, FILE_WRITE);
+  if (serializeJson(doc, file) == 0)
+  {
+    Serial.println("Failed to write log to file");
+  }
+  else
+  {
+    Serial.println("Log saved to SPIFFS");
+  }
+  file.close();
+
+  // Upload to Firebase
+  String logData;
+  size_t len = measureJson(doc); // Measure the length of the serialized JSON
+  char buffer[len + 1];          // Create a buffer of the appropriate size
+  serializeJson(doc, buffer, sizeof(buffer)); // Serialize JSON into the buffer
+  logData = String(buffer);      // Convert the buffer to an Arduino String
+
+  // Check the serialized data to verify it's a valid JSON string
+  Serial.println("Serialized Log Data: ");
+  Serial.println(logData);  // Print out the JSON data being sent to Firebase
+
+  if (!Firebase.RTDB.setString(&firebaseData, "/logs", logData))
+  {
+    Serial.println("Failed to upload log to Firebase:");
+    Serial.println(firebaseData.errorReason());
+  }
+  else
+  {
+    Serial.println("Log uploaded to Firebase.");
+  }
 }
-
-JsonArray logArray = doc.as<JsonArray>();
-
-// Add new log entry
-JsonObject logEntry = logArray.createNestedObject();
-logEntry["timestamp"] = timestamp;
-logEntry["event"] = event;
-
-// Limit Log size
-if (logArray.size() > MAX_LOG_ENTRIES)
-{
-  logArray.remove(0); // Remove the oldest Log entry
-}
-
-// Save updated JSON back to file
-file = SPIFFS.open(LOG_FILE, FILE_WRITE);
-if (serializeJson(doc, file) == 0)
-{
-  Serial.println("Failed to write log to file");
-}
-else
-{
-  Serial.println("Log saved to SPIFFS");
-}
-file.close();
-
-//Upload to firebase
-String logData;
-size_t len = measureJson(doc); // Measure the length of the serialized JSON
-char buffer[len + 1];          // Create a buffer of the appropriate size
-serializeJson(doc, buffer, sizeof(buffer)); // Serialize JSON into the buffer
-logData = String(buffer);      // Convert the buffer to an Arduino String
-
-if (!Firebase.RTDB.setString(&firebaseData, "/logs", logData))
-{
-  Serial.println("Failed to upload log to Firebase:");
-  Serial.println(firebaseData.errorReason());
-}
-else
-{
-  Serial.println("Log uploaded to Firebase.");
-}
-
-
-}
-
-
 
 void printLocalTime()
 {
@@ -142,13 +147,10 @@ void printLocalTime()
   Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");  
 }
 
-
-
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(9600);
 
-  //Connect to Wi-fi
+  // Connect to Wi-Fi
   Serial.print("Connecting to Wi-fi...");
   WiFi.begin(ssid, password);
 
@@ -162,23 +164,31 @@ void setup() {
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP()); // Print the local IP address
 
-  //Initialize and configure time
+  // Initialize and configure time
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  Serial.println("Time synchronized with NTP server.");
-  // Print the current time
-  printLocalTime();
+  
+  delay(5000);
+
+  // Check if the time was successfully obtained
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+  } else {
+    Serial.println("Time obtained successfully");
+    printLocalTime();
+  }
 
   // Initialize SPIFFS
   initializeSPIFFS();
 
-  //set firebase configuration
-  firebaseConfig.database_url = FIREBASE_HOST; // set the firebase url
-  firebaseAuth.token.uid = FIREBASE_AUTH;
+  // Set Firebase configuration
+  firebaseConfig.database_url = FIREBASE_HOST; // set the firebase URL
+  firebaseConfig.signer.tokens.legacy_token = FIREBASE_AUTH;
 
-  //initialize firebase
+  // Initialize Firebase
   Firebase.begin(&firebaseConfig, &firebaseAuth);
 
-  // Deep sleep
+  // Deep sleep configuration
   pinMode(SENSOR_PIN, INPUT);
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_33, 1); // Set GPIO33 as wake-up source on HIGH signal
 
@@ -186,7 +196,6 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
   int reading = digitalRead(SENSOR_PIN); // Read the current state of the sensor
   
   // Check if the sensor state has changed
@@ -197,10 +206,10 @@ void loop() {
   }
 
   // If the state has been stable for the debounce delay
-  if((millis() - lastDebounceTime) > DEBOUNCE_DELAY) 
+  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY) 
   {
-    //only update the current state if it has truly changed
-    if(reading != currentState)
+    // Only update the current state if it has truly changed
+    if (reading != currentState)
     {
       currentState = reading;
 
@@ -208,9 +217,9 @@ void loop() {
       String timestamp = getTimestamp();
       if (currentState == HIGH)
       {
-       Serial.println("Object detected!");
-       logEvent(timestamp, "Object detected");
-       lastActivityTime = millis(); // Reset the inactivity timer
+        Serial.println("Object detected!");
+        logEvent(timestamp, "Object detected");
+        lastActivityTime = millis(); // Reset the inactivity timer
       }
       else
       {
@@ -230,5 +239,3 @@ void loop() {
     esp_deep_sleep_start(); // Enter deep sleep
   }  
 }
-
-// put function definitions here:
