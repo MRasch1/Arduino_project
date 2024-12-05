@@ -20,10 +20,8 @@ unsigned long lastDebounceTime = 0; // Last time the sensor state changed
 int lastStableState = LOW; // Last stbale state of the sensor
 int currentState = LOW; // Current state of the sensor
 //Wifi credentials
-// const char* ssid = "E308"; // Wi-fi SSID
-// const char* password = "98806829"; // Wi-fi password
-const char* ssid = "Dio Brando"; // Wi-fi SSID
-const char* password = "mudamuda10"; // Wi-fi password
+const char* ssid = "E308"; // Wi-fi SSID
+const char* password = "98806829"; // Wi-fi password
 // NTP server and timezone settings
 const char* ntpServer = "time.google.com"; //NTP server
 const long gmtOffset_sec = 3600;
@@ -121,11 +119,15 @@ void logEvent(const String& timestamp, const String& event)
   serializeJson(doc, buffer, sizeof(buffer)); // Serialize JSON into the buffer
   logData = String(buffer);      // Convert the buffer to an Arduino String
 
+  // Create a Firebase path based on the timestamp
+  String firebasePath = "/logs/" + timestamp;  // Path: /logs/{timestamp}
+
   // Check the serialized data to verify it's a valid JSON string
   Serial.println("Serialized Log Data: ");
   Serial.println(logData);  // Print out the JSON data being sent to Firebase
 
-  if (!Firebase.RTDB.setString(&firebaseData, "/logs", logData))
+  // Upload the log entry to Firebase at the dynamic path
+  if (!Firebase.RTDB.setString(&firebaseData, firebasePath.c_str(), event))
   {
     Serial.println("Failed to upload log to Firebase:");
     Serial.println(firebaseData.errorReason());
@@ -167,7 +169,7 @@ void setup() {
   // Initialize and configure time
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   
-  delay(5000);
+  delay(2000);
 
   // Check if the time was successfully obtained
   struct tm timeinfo;
@@ -224,7 +226,6 @@ void loop() {
       else
       {
         Serial.println("No object detected.");
-        logEvent(timestamp, "No object detected");
       }      
     }
   }
